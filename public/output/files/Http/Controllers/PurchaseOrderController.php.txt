@@ -1,0 +1,462 @@
+<?php
+
+/**
+ * UIDAI
+ *
+ * PHP Version 7.1
+ * 
+ * @category   PurchaseOrder
+ * @author    Choice Tech Lab <contact@choicetechlab.com>
+ * @copyright 2017-2018 Choice Tech Lab (https://choicetechlab.com)
+ * @license   https://choicetechlab.com/licenses/ctl-license.php CTL General Public License
+ * @version  1.0.1
+ * @package App\Http\Controllers\PurchaseOrderController
+ * @link      https://choicetechlab.com/
+ */
+
+namespace App\Http\Controllers;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use App\PurchaseOrder;
+use App\WorkflowName;
+use App\Role;
+use App\Entity;
+use App\Eas;
+use Auth;
+use App\Http\Controllers\CommonController;
+/**
+ * This class provides all operations to manage the PurchaseOrder data 
+ *
+ */
+
+class PurchaseOrderController extends Controller
+{
+
+
+ public $user_id,$user,$user_details;
+ public function __construct()
+ {
+    $this->middleware('auth');
+    $this->middleware(function ($request, $next) {
+        $this->user= Auth::user();
+        $this->user_id=Auth::id();
+        $this->user_details = new CommonController();
+        return $next($request);
+    });
+}
+    /**
+     * Display a listing of the PurchaseOrder
+     *
+     * @return \Illuminate\Http\Response
+    *  @var string $keyword Returns the user input for search.
+     * @var int $perPage To store number of entries for listing
+     * @var string $purchase_order_masters Returns the data from purchase_order_masters table from the user inputs for search
+     * @var bool $purchase_order_listing Returns the data from purchase_order_masters table for listing
+     * This Function Provide the list of all Advance Data.
+     *  Pseudo Steps: <br>
+     * 1) Create view to list down the columns.<br>
+     * 2) Create Model and add table,list down table coulmns, and use soft delete class<br>
+     * 3) Retreive records in Controller by accessing Model with scope resolution operator.<br>
+     * 4) Store result in variable and pass the variable to view of listing.<br>
+     * 5) Foreach this varaible in listing View to fetch each record from table with actions to be performed.<br>
+     * 
+     * @param mixed[] $request Request structure to get the post data for pagination like limit and offset.
+     *
+     */
+    public function index(Request $request)
+    {
+
+        try {
+         $role_details=$this->user_details->getUserDetails($this->user->role_id);
+             // dd($this->user);
+
+         $keyword = $request->get('search');
+         $perPage = 25;
+
+         if (!empty($keyword)) {
+            $purchase_order_masters = PurchaseOrder::where('vendor_name', 'LIKE', "%$keyword%")
+            ->orWhere('vendor_address', 'LIKE', "%$keyword%")
+            ->orWhere('subject', 'LIKE', "%$keyword%")
+            ->orWhere('bid_number', 'LIKE', "%$keyword%")
+            ->orWhere('date_of_bid', 'LIKE', "%$keyword%")
+            ->orWhere('title_of_bid', 'LIKE', "%$keyword%")
+            ->orWhere('copy_to', 'LIKE', "%$keyword%")
+            ->latest()->paginate($perPage);
+        } else {
+            $purchase_order_listing = PurchaseOrder::select('purchase_order_masters.*','status.status_name') 
+            ->join('status','status.id','=','purchase_order_masters.status_id')
+            ->where(['purchase_order_masters.location_id'=>$role_details['location_id'],'purchase_order_masters.department_id'=>$role_details['department_id'],'purchase_order_masters.office_type_id'=>$role_details['office_type_id']])
+            ->where(['purchase_order_masters.deleted_at'=>Null,'status.deleted_at'=>Null])
+            ->paginate($perPage);
+        }
+
+        if(isset($purchase_order_listing) && !empty($purchase_order_listing)) {
+            return view('purchase_order.index', compact('purchase_order_listing'));
+        } else {
+            return view('purchase_order.index')->with('danger','Data Not found');
+        }
+    } catch (\Exception $e) {
+            //report($e);
+
+    }
+
+}
+
+    /**
+     * To create new PurchaseOrder 
+     *
+     * @return \Illuminate\Http\Response
+     * 
+     * @var string $keyword Returns the user input for search.
+     * @var int $perPage To store number of entries for listing
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+    public function create()
+    {
+        try {
+
+            $roles = Role::select('display_name', 'id')->where('deleted_at', null)->get();
+
+            $eas = Eas::select('eas_masters.sanction_title','eas_masters.id','vendor_master.vendor_name','vendor_master.address')
+            ->join('vendor_master','vendor_master.id','=','eas_masters.vendor_id' )
+            ->where('eas_masters.status_id','=', 3)
+            ->where(['eas_masters.deleted_at'=> null,'vendor_master.deleted_at'=> null ])
+            ->get();
+
+            $workflow_mapping = Entity::select('type_name','id','workflow_id')
+            ->where('type_name','=','PO')
+            ->where('deleted_at',NULL)
+            ->first();
+
+          // dd($workflow_mapping);
+
+            return view('purchase_order.create', compact('roles','eas','workflow_mapping'));
+        } catch (\Exception $e) {
+
+            Log::critical($e->getMessage());
+            app('sentry')->captureException($e);
+            return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+        }  
+    }
+
+     /**
+     * To store new PurchaseOrder 
+     *
+     * @return \Illuminate\Http\Response
+     * 
+     * @var array $requestData Returns the user inputs from post data
+     * @var array $purchase_array To assign value from requested data to columns and insert array
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+     public function store(Request $request)
+     {
+         $requestData = $request->all();
+
+         if(isset($requestData['eas_id']) && !empty($requestData['eas_id']) ) {
+            $eas_id = $requestData['eas_id'];
+        } else {
+            $eas_id = '';
+        }
+        if(isset($request->copy_to)) {
+
+          $this->validate($request, [
+            'eas_id' => 'required',
+            'vendor_name' => 'required',
+            'subject' => 'required',
+            'bid_number' => 'required',
+            'date_of_bid' => 'required',
+            'title_of_bid' => 'required',
+            'email_users' => 'required'
+
+        ]);
+      } else {
+        $this->validate($request, [
+            'eas_id' => 'required',
+            'vendor_name' => 'required',
+            'subject' => 'required',
+            'bid_number' => 'required',
+            'date_of_bid' => 'required',
+            'title_of_bid' => 'required'
+        ]);
+    }
+
+    try {
+
+        //User can send email to multiple roles.Multiple select dropdown is used to select multiple roles and id is stored in email_usrs columns
+        //Key of $requestData['email_users'] is retrieved from request and saved in database using comma separated values by imploding the values
+        $email_mail = $requestData['email_users'];
+        $send_email = implode(",", $email_mail);
+
+        //logged in users location_id,office_type_id,department_id is fetched to store
+        $user_details = $this->user_details->getUserDetails($this->user->role_id);
+
+        $entity_id = Entity::select('type_name','id','workflow_id','entity_slug')
+        ->where('type_name','=','PO')
+        ->where('deleted_at',NULL)
+        ->first();
+
+        $workflow_name = WorkflowName::select('default_status','id')
+        ->where('id','=',$entity_id->workflow_id)
+        ->where('deleted_at',NULL)
+        ->first();
+
+        $purchase_array = array(
+            'eas_id' => $eas_id,
+            'vendor_name' => $request->vendor_name,
+            'vendor_address' => $request->vendor_address,
+            'subject' => $request->subject,
+            'bid_number' => $request->bid_number,
+            'date_of_bid' => $request->date_of_bid,
+            'title_of_bid' => $request->title_of_bid,
+            'copy_to' => $request->copy_to,
+            'email_users' => $send_email,
+            'status_id' => $workflow_name['default_status'],
+            'location_id'=> $user_details['location_id'],
+            'office_type_id' => $user_details['office_type_id'],
+            'department_id' =>$user_details['department_id'],
+            'created_by'=>$this->user_id
+        );
+
+        //dd($purchase_array);
+
+        PurchaseOrder::insert ($purchase_array);
+        return redirect('purchase-order')->with('success', 'Purchase Order Added!');
+    } catch (\Exception $e) {
+
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+    }
+}
+
+    /**
+     * Display the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function show($id)
+    {
+        //try {
+
+        $purchase_order_master = PurchaseOrder::findOrFail($id);
+
+        $roles = PurchaseOrder::select('email_users', 'id')
+        ->where('id','=',$id)
+        ->where('deleted_at', null)
+        ->get();
+
+        foreach ($roles as $value) {
+           $selected_roles = explode(',',$value['email_users']); 
+       }
+
+
+
+         $get_role = PurchaseOrder::select('roles.display_name','purchase_order_masters.email_users')
+           ->join('roles','roles.id','=','purchase_order_masters.email_users')
+           ->where(['roles.deleted_at'=> null,'purchase_order_masters.deleted_at'=> null ])
+           ->first();
+
+       //    foreach ($get_role as $key => $values) {
+
+       //     $role_name[$key] = explode(',',$values->display_name); 
+       // }
+     
+
+       return view('/purchase_order.show', compact('purchase_order_master','get_role'));
+
+        // } catch (\Exception $e) {
+
+        //     Log::critical($e->getMessage());
+        //     app('sentry')->captureException($e);
+        //     return redirect('/eas')->with('danger', 'Something went wrong!');
+        // } 
+   }
+
+    /**
+     * To edit the records of PurchaseOrder 
+     *
+     * @return \Illuminate\Http\Response
+     * 
+     * @var int $purchase_order_master Returns the id of current user
+     * @var array $purchase_array To assign value from requested data to columns and insert array
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+    public function edit($id)
+    {
+       try {
+           $roles = Role::select('display_name', 'id')->where('deleted_at', null)->get();
+           $purchase_order_master = PurchaseOrder::findOrFail($id);
+
+      // dd($purchase_order_master);
+           $transactions = new CommonController();
+
+           $mail = $purchase_order_master['email_users'];
+           $selected_mail_users = explode(",", $mail);
+
+           $entity_id = Entity::select('type_name','id','workflow_id','entity_slug')
+           ->where('type_name','=','PO')
+           ->where('deleted_at',NULL)
+           ->first();
+
+           $transactions_details = $transactions->getApplicableTransaction($purchase_order_master->status_id,$entity_id->workflow_id);
+           if($transactions_details['body']) {
+            $transaction_data = $transactions_details['body'];
+        } else {
+            $transaction_data = " ";
+        }
+
+        $eas = Eas::select('eas_masters.sanction_title','eas_masters.id','vendor_master.vendor_name','vendor_master.address')
+        ->join('vendor_master','vendor_master.id','=','eas_masters.vendor_id' )
+        ->where('eas_masters.status_id','=', 3)
+        ->where(['eas_masters.deleted_at'=> null,'vendor_master.deleted_at'=> null ])
+        ->get();
+
+        return view('purchase_order.edit', compact('purchase_order_master','roles','selected_mail_users','eas','entity_id','transaction_data'));
+    } catch (\Exception $e) {
+
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+    }
+}
+
+   /**
+     * Update the specified record of PurchaseOrder 
+     *
+     * @return \Illuminate\Http\Response
+     * @var array $requestData Returns the user inputs from post data
+     * @var int $purchase_order_master Returns the id of current user
+     * @var array $update_data To assign value from requested data to columns and update array
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+   public function update(Request $request, $id)
+   {
+    try {
+        $this->validate($request, [
+            'eas_id' => 'required',
+            'vendor_name' => 'required',
+            'vendor_address' => 'required',
+            'subject' => 'required',
+            'bid_number' => 'required',
+            'date_of_bid' => 'required',
+            'title_of_bid' => 'required',
+        // 'email_users' => 'required'
+
+        ]);
+
+        $requestData = $request->all();
+        $email_mail = $requestData['email_users'];
+        $send_email = implode(",", $email_mail);
+
+        if(isset($requestData['eas_id']) && !empty($requestData['eas_id']) ) {
+            $eas_id = $requestData['eas_id'];
+        } else {
+            $eas_id = '';
+        }
+
+        $purchase_order = PurchaseOrder::findOrFail($id);
+
+        $update_data = array(
+            'eas_id' => $eas_id,
+            'vendor_name' => $request->vendor_name,
+            'vendor_address' => $request->vendor_address,
+            'subject' => $request->subject,
+            'bid_number' => $request->bid_number,
+            'date_of_bid' => $request->date_of_bid,
+            'title_of_bid' => $request->title_of_bid,
+            'copy_to' => $request->copy_to,
+            'email_users' => $send_email
+        );
+
+        $purchase_order_data = $purchase_order->update($update_data);
+
+        if (isset($purchase_order_data) && !empty($purchase_order_data)) {
+            return redirect('purchase-order')->with('success', 'Purchase Order Updated Successfully!');
+        } else {
+            return redirect('purchase-order')->with('danger', 'Something went wrong');
+        }   
+
+    } catch (\Exception $e) {
+
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+    }
+}
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     * @var array $update_data To assign value from requested data to columns and update array
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+    public function destroy($id)
+    {
+     try {
+      if (isset($id) && !empty($id)) {
+         PurchaseOrder::destroy($id);
+     } else {
+        return redirect('purchase-order')->with('danger', 'Id not found!');
+    }
+
+    return redirect('purchase-order')->with('success', 'Purchase Order Deleted!');
+} catch (\Exception $e) {
+
+    Log::critical($e->getMessage());
+    app('sentry')->captureException($e);
+    return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+}
+}
+
+    /**
+     * To fetch vendor details for selected EAS.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     * @var array $update_data To assign value from requested data to columns and update array
+     * @var string $eas Vendor Id is mapped in EAS master table. Sanction title is listed in dropdown,on selection vendor name and address is fetch from eas table against selected EAS
+     * @var bool $roles Returns the data from Role table.
+     *
+     */
+    public function vendorDetails($id)
+    {
+        try {
+           $eas = Eas::select('eas_masters.id','vendor_master.vendor_name','vendor_master.address')
+           ->join('vendor_master','vendor_master.id','=','eas_masters.vendor_id' )
+           ->where('eas_masters.id','=',$id)
+           ->where(['eas_masters.deleted_at'=> null,'vendor_master.deleted_at'=> null ])->get();
+
+           //to retrieve vendor_name, address from EAS 
+           foreach ($eas as $value) {
+              $data['vendor_name'] = $value['vendor_name'];
+              $data['address'] = $value['address'];
+          }
+
+          if (isset($data) && !empty($data)) {
+            return $data;
+        } else {
+
+        }
+    } catch (\Exception $e) {
+
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('purchase-order')->with('danger', 'Something went wrong!'); 
+    }
+}
+}
+

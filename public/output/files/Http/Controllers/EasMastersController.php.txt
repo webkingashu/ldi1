@@ -1,0 +1,436 @@
+<?php
+
+/**
+ * UIDAI
+ *
+ * PHP Version 7.1
+ * 
+ * @category  EasMasters
+ * @author  Choice Tech Lab <contact@choicetechlab.com>
+ * @copyright 2017-2018 Choice Tech Lab (https://choicetechlab.com)
+ * @license  https://choicetechlab.com/licenses/ctl-license.php CTL General Public License
+ * @version  1.0.1
+ * @package App\Http\Controllers\EasMastersController
+ * @link  https://choicetechlab.com/
+ */
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests;
+use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Collection;
+use App\Eas;
+use App\Vendor;
+use App\Department;
+use App\Role;
+use App\Entity;
+use App\Transaction;
+use App\WorkflowName;
+use Illuminate\Http\Request;
+use Session;
+use Redirect;
+use Auth;
+use App\Http\Controllers\CommonController;
+use Illuminate\Support\Facades\Log;
+use App\Exceptions\Handler;
+
+
+/**
+ * This class provides a all operation to manage the Expenditure Angle Sanction(EAS) data.
+ *
+ * The EasMastersController is responsible for managing the basic details require for genarating the EAS report.
+ * 
+ */
+class EasMastersController extends Controller
+{   
+     public $user_id,$user,$user_details;
+     public function __construct()
+    {
+        //$this->middleware('auth');
+        $this->middleware(function ($request, $next) {
+        $this->user= Auth::user();
+        $this->user_id=Auth::id();
+        $this->user_details = new CommonController();
+        return $next($request);
+
+        });
+    }
+    /**
+     * Display a listing of the Expenditure Angle Sanction(EAS),with Sanction title, Purpose of Sanction etc. Also provide actions to edit,delete.
+     *
+     * @return \Illuminate\Http\Response
+
+     * This Function Provide the list of all Expenditure Angle Sanction(EAS) Data.
+     *  Pseudo Steps: <br>
+     * 1)Create view to list down the coulmns.<br>
+     * 2) Create Model and add table,list down table coulmns, and use soft delete class<br>
+     * 3) Retreive records in Controller by accessing Model with scope resolution operator.<br>
+     * 4) Store result in variable and pass the variable to view of listing.<br>
+     * 5) Foreach this varaible in listing View to fetch each record from table with actions to be performed.<br>
+     * 
+     * @param mixed[] $request Request structure to get the post data for pagination like limit and offset.
+     * 
+     * @var int $limit Should contain a number for limit of record by default it is 10.
+     * @var int $offset Should contain a number for offset of record by default it is 0.
+     * 
+     * @return json response for Expenditure Angle Sanction(EAS) list.
+     
+     */
+    public function index(Request $request)
+    {  
+    try {
+        $role_details=$this->user_details->getUserDetails($this->user->role_id);
+        if(isset($role_details) && $role_details['status'] == 200 ) {
+            $keyword = $request->get('search');
+            $perPage = 25;
+                if (!empty($keyword)) {
+                    $eas_masters = eas_master::where('sanction_title', 'LIKE', "%$keyword%")
+                        ->orWhere('sanction_purpose', 'LIKE', "%$keyword%")
+                        ->orWhere('competent_authority', 'LIKE', "%$keyword%")
+                        ->orWhere('serial_no_of_sanction', 'LIKE', "%$keyword%")
+                        ->orWhere('file_number', 'LIKE', "%$keyword%")
+                        ->orWhere('sanction_total', 'LIKE', "%$keyword%")
+                        ->orWhere('budget_code', 'LIKE', "%$keyword%")
+                        ->orWhere('validity_sanction_period', 'LIKE', "%$keyword%")
+                        ->orWhere('date_issue', 'LIKE', "%$keyword%")
+                        ->orWhere('vendor_id', 'LIKE', "%$keyword%")
+                        ->orWhere('cfa_note_number', 'LIKE', "%$keyword%")
+                        ->orWhere('cfa_dated', 'LIKE', "%$keyword%")
+                        ->orWhere('cfa_file_number', 'LIKE', "%$keyword%")
+                        ->orWhere('fc_number', 'LIKE', "%$keyword%")
+                        ->orWhere('fc_dated', 'LIKE', "%$keyword%")
+                        ->orWhere('fc_on_page', 'LIKE', "%$keyword%")
+                        ->orWhere('fc_on_file_no', 'LIKE', "%$keyword%")
+                        ->latest()->paginate($perPage);
+                } else {
+                    $eas_masters = Eas::select('eas_masters.*','vendor_master.vendor_name','status.status_name')
+                    ->join('vendor_master','vendor_master.id','=','eas_masters.vendor_id')
+                    ->join('status','status.id','=','eas_masters.status_id')
+                    ->where(['eas_masters.deleted_at'=> Null,'vendor_master.deleted_at'=>Null,'status.deleted_at'=>Null])
+                    ->where(['eas_masters.location_id'=>$role_details['location_id'],'eas_masters.department_id'=>$role_details['department_id'],'eas_masters.office_type_id'=>$role_details['office_type_id']])
+                    ->latest()->paginate($perPage);
+                }
+                if(isset($eas_masters) && !empty($eas_masters)) { 
+                    return view('/eas.index', compact('eas_masters'));
+                } else {
+                    return view('/eas.index')->with('danger','Data not found');
+                }
+            } else {  
+                return redirect('/eas')->with('danger', 'User details not found.');   
+            }    
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+         app('sentry')->captureException($e);
+        return redirect('/eas')->with('danger', 'Something went wrong!'); 
+        }    
+    }
+    
+    /**
+     * Show the form for creating a new EAS.
+     *
+     * @return \Illuminate\Http\Response
+     * Create form to submit record through post 
+     */
+    public function create()
+    {
+      try {
+       
+            $vendor_name = Vendor::select('id','vendor_name')->where(['deleted_at' => Null])->get();
+            $entity_details = Entity::select('id','workflow_id','entity_slug')->where(['deleted_at' => Null,'type_name' =>"EAS"])->first();
+
+            return view('/eas.create',compact('vendor_name','entity_details'));
+
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('/eas')->with('danger', 'Something went wrong!');
+        }    
+    }
+
+    /**
+     * Store a newly created EAS in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector
+     * This Function Use To Store Expenditure Angle Sanction(EAS) Data,with manadatory fields for Report Generation.
+     * Pseudo Steps:<br>
+     * 1) Using validator class fetch inputs from $request and add required fields.<br>
+     * 2) If Validation fails return to the same view if validation is success pass array of requested data to create.<br>
+     * 3) Redirect to listing page with suscces or error message <br>
+     * @param array[] $request request structure to get the post data for storing in to the database
+     * 
+     * @return json result for success Expenditure Angle Sanction(EAS) list.
+     * 
+     * @var array[] $eas_masters Should contain list of data return by the query. 
+     * @var string $error if any error occur then it will be store in this variable.
+     * @var string $validator is used to make the fields as required and if Validation failed flash message of Error will be diplayed
+     * @var array[] $user_details is used to store list of data which include location id, officetype id, department id of loged in user.
+     * @var array[] $eas_details to fetch data from request
+     * 
+     */
+    public function store(Request $request)
+    {
+      
+           if($request->whether_being_issued == 'fa_concurrence') {
+            $this->validate($request,[
+                'sanction_title'   => 'required',
+                'sanction_purpose'         => 'required',
+                'competent_authority'    => 'required',
+                'serial_no_of_sanction'     => 'required',
+                'file_number'       => 'required',
+                'sanction_total'   => 'required',
+                'budget_code'     => 'required',
+                'validity_sanction_period'     => 'required',
+                'date_issue'   => 'required',
+                'vendor_id' => 'required',
+                'cfa_note_number' => 'required',
+                'cfa_dated' => 'required',
+                'cfa_file_number' => 'required',
+                'fc_number' => 'required',
+                'fc_dated' => 'required',
+                'fc_on_page' => 'required',
+            ]);
+          }  else  {  
+            $this->validate($request,[
+                'sanction_title'   => 'required',
+                'sanction_purpose'         => 'required',
+                'competent_authority'    => 'required',
+                'serial_no_of_sanction'     => 'required',
+                'file_number'       => 'required',
+                'sanction_total'   => 'required',
+                'budget_code'     => 'required',
+                'validity_sanction_period'     => 'required',
+                'date_issue'   => 'required',
+                'vendor_id' => 'required',
+                'cfa_note_number' => 'required',
+                'cfa_dated' => 'required',
+                'cfa_file_number' => 'required',   
+            ]);
+        }
+         try { 
+        $user_details= $this->user_details->getUserDetails($this->user->role_id);
+        $entity_id = $request->entity_id;
+        $workflow = Entity::select('workflow_id')->where(['id' => $entity_id,'deleted_at' => Null])->first();
+        $status_id = WorkflowName::select('default_status')->where(['id' => $workflow->workflow_id])->first();
+            
+            if(isset($user_details) && !empty($user_details) && $user_details != Null)
+            {
+                $eas_details = Eas::create([
+                'sanction_title'=>$request->sanction_title,
+                'sanction_purpose'=>$request->sanction_purpose,
+                'competent_authority'=>$request->competent_authority,
+                'serial_no_of_sanction'=>$request->serial_no_of_sanction,
+                'file_number'=>$request->file_number,
+                'sanction_total'=>$request->sanction_total,
+                'budget_code'=>$request->budget_code,
+                'validity_sanction_period'=>$request->validity_sanction_period,
+                'date_issue'=>$request->date_issue,
+                'vendor_id'=>$request->vendor_id,
+                'cfa_note_number'=>$request->cfa_note_number,
+                'cfa_dated'=>$request->cfa_dated,
+                'cfa_file_number'=>$request->cfa_file_number,
+                'whether_being_issued_under' => $request->whether_being_issued,
+                'fc_number'=>$request->fc_number,
+                'fc_dated'=>$request->fc_dated,
+                'fc_on_page'=>$request->fc_on_page,
+                'fc_on_file_no'=>$request->fc_on_file_no,
+                'location_id'=>$user_details['location_id'],
+                'office_type_id' => $user_details['office_type_id'],
+                'department_id' =>$user_details['department_id'],
+                'status_id' => $status_id->default_status,
+                'created_by'=>$this->user_id]);
+
+                if(isset($eas_details) && !empty($eas_details))  {
+                    return redirect('/eas')->with('success', 'Eas added successfully!');
+                } else {
+                     return redirect('/eas')->with('danger', 'Something went wrong!');
+                } 
+            } else {
+                return redirect('/eas')->with('danger', 'Role not found');
+            } 
+
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+          return redirect('/eas')->with('danger', 'Something went wrong!');
+        } 
+    }
+
+     /**
+     * Show a view of  created EAS 
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     * Display the specified EAS in readonly format against particular record
+     * Pseudo Steps:<br>
+     * 1)  Create view structure to display record of selected Id <br>
+     * 2) Fetch records from Model and store in a variable and pass it to  a View<br>
+     * 3) Foreach to fetch record
+     * @param  int  $id
+     * @var string $eas_master To select record from table 
+     * @return \Illuminate\Http\Response
+     */
+    public function show($id)
+    {
+      try {
+            $eas_master = Eas::findOrFail($id);
+            return view('/eas.show', compact('eas_master'));
+
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+          return redirect('/eas')->with('danger', 'Something went wrong!');
+        } 
+    }
+
+     /**
+     * Show the form for editing the specified EAS.
+     * Pseudo step : 1) Retreive data from table against particular id <br> 
+     * 2) pass this variable to view <br> 
+     * 3) in Value attribute mention the coulmn name to fetch record
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     * @var string $eas_master retrieve data from Model
+     * @var string $vendor_name retrieve vendor data from Model
+     */
+    public function edit($id)
+    {  
+        try {
+            $eas_master = Eas::findOrFail($id);
+            $vendor_name = Vendor::select('id','vendor_name')->where(['deleted_at' => Null])->get();
+            $entity_details = Entity::select('id','workflow_id','entity_slug')->where(['deleted_at' => Null,'type_name' =>"EAS"])->first();
+            $transactions = new CommonController();
+            $transactions_details = $transactions->getApplicableTransaction($eas_master->status_id,$entity_details->workflow_id);
+
+            if($transactions_details['body'])
+            {
+                $transaction_data = $transactions_details['body'];
+            } else {
+                $transaction_data = " ";
+            }
+           return view('/eas.edit', compact('eas_master','vendor_name','entity_details','transaction_data'));
+
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        return redirect('/eas')->with('danger', 'Something went wrong!');
+        }    
+    }
+
+    /**
+     * Update the specified EAS in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+       * This Function Use To Update Expenditure Angle Sanction(EAS) Data,with manadatory fields for Report Generation.
+     * Pseudo Steps:<br>
+     * 1) Using validator class fetch inputs from $request and add required fields.<br>
+     * 2) If Validation fails return to the same view if validation is success pass array of requested data to create.<br>
+     * 3) Redirect to listing page with suscces or error message <br>
+     * @param array[] $request request structure to get the post data for storing in to the database
+     * 
+     * @return json result for success Expenditure Angle Sanction(EAS) list.
+     * 
+     * @var array[] $eas_masters Should contain list of data return by the query. 
+     * @var string $error if any error occur then it will be store in this variable.
+     * @var string $validator is used to make the fields as required and if Validation failed flash message of Error will be diplayed
+     * @var array[] $requestData to fetch data from request
+     * 
+     */
+    public function update(Request $request, $id)
+    {
+    
+        if($request->whether_being_issued == 'fa_concurrence')
+       {
+        $this->validate($request,[
+            'sanction_title'   => 'required',
+            'sanction_purpose'         => 'required',
+            'competent_authority'    => 'required',
+            'serial_no_of_sanction'     => 'required',
+            'file_number'       => 'required',
+            'sanction_total'   => 'required',
+            'budget_code'     => 'required',
+            'validity_sanction_period'     => 'required',
+            'date_issue'   => 'required',
+            'vendor_id' => 'required',
+            'cfa_note_number' => 'required',
+            'cfa_dated' => 'required',
+            'cfa_file_number' => 'required',
+            'fc_number' => 'required',
+            'fc_dated' => 'required',
+            'fc_on_page' => 'required',
+            'fc_on_file_no' => 'required'
+        ]);
+        } else { 
+         $this->validate($request,[
+            'sanction_title'   => 'required',
+            'sanction_purpose'         => 'required',
+            'competent_authority'    => 'required',
+            'serial_no_of_sanction'     => 'required',
+            'file_number'       => 'required',
+            'sanction_total'   => 'required',
+            'budget_code'     => 'required',
+            'validity_sanction_period'     => 'required',
+            'date_issue'   => 'required',
+            'vendor_id' => 'required',
+            'cfa_note_number' => 'required',
+            'cfa_dated' => 'required',
+            'cfa_file_number' => 'required'  
+        ]);
+        }
+     try {    
+            $requestData = $request->all();
+            $eas_master = Eas::findOrFail($id);
+            $eas_updated_data = $eas_master->update($requestData);
+
+            if(isset($eas_updated_data) && !empty($eas_updated_data)) {
+                return redirect('/eas')->with('success', 'Eas updated successfully!');
+            } else {
+                return redirect('/eas')->with('danger', 'Something went wrong');
+            }  
+
+        } catch (\Exception $e) {
+         
+        Log::critical($e->getMessage());
+            app('sentry')->captureException($e);
+              return redirect('/eas')->with('danger', 'Something went wrong!');
+        }      
+    }
+
+    /**
+     * Remove the specified EAS from storage.
+     *
+     * @param  int  $id
+     *
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector
+     * @param  int  $id
+     * @var string $eas to find record against particular id  
+     * @var string $result to delete record
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {   
+     try {      
+            if(isset($id) && !empty($id)) { 
+                $eas = Eas::destroy($id);
+                if(isset($eas) && !empty($eas)) {
+                     return redirect('/eas')->with('success', 'Eas deleted successfully!');
+                } else {
+                    return redirect('/eas')->with('danger', 'Something went wrong');
+                }
+            } else  {
+                return redirect('/eas')->with('danger', 'Id not found');
+            }
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+          return redirect('/eas')->with('danger', 'Something went wrong!');
+        }     
+    }
+}
+

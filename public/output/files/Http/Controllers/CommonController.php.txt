@@ -1,0 +1,224 @@
+<?php
+namespace App\Http\Controllers;
+use App\Http\Requests;
+use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Collection;
+use App\Department;
+use App\Role;
+use App\Transaction;
+use App\WorkFlowTransactionMapper;
+use App\WorkFlowTransactionConditionValueMapper;
+use App\Status;
+use App\PermissionMapper;
+use Illuminate\Http\Request;
+use Session;
+use Redirect;
+use Auth;
+use App\Eas;
+use App\PurchaseOrder;
+use Illuminate\Support\Facades\Log;
+use App\Exceptions\Handler;
+
+class CommonController extends Controller
+{   
+     public $user_id,$user;
+     public function __construct()
+    {
+        //$this->middleware('auth');
+        $this->middleware(function ($request, $next) {
+        $this->user= Auth::user();
+        $this->user_id=Auth::id();
+       
+        return $next($request);
+        });
+    }
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector
+     */
+    public function getUserDetails($role_id)
+    {
+        if(isset($role_id) && !empty($role_id))
+        {
+            $user_details = Role::select('roles.*','departments.office_type_id','departments.city_id as location_id')
+            ->join('departments','departments.id' ,'=', 'roles.department_id')
+            ->where('roles.id', '=',$role_id)
+            ->where(['roles.deleted_at' => Null, 'departments.deleted_at'=>Null])
+            ->get();
+            if(isset($user_details) && !empty($user_details))
+            {   
+                foreach ($user_details as $value) 
+                {
+                   $data['location_id'] = $value->location_id;
+                   $data['office_type_id'] = $value->office_type_id;
+                   $data['department_id'] = $value->department_id; 
+                   $data['status']=200; 
+                }   
+            } else {
+              $data['status']=204;
+            }  
+        } 
+       return $data;  
+    }
+
+     public function getApplicableTransaction($status_id,$workflow_id)
+    { 
+
+        $data['body'] = WorkFlowTransactionMapper::select('transactions.id','workflow_transaction_mapper.*','to_status.status_name as to_status_name','transactions.to_status as to_status_id')
+            ->join('transactions','workflow_transaction_mapper.transaction_id','=','transactions.id')
+            ->join('status as to_status', function($join) 
+            {
+                $join->on('to_status.id', '=', 'transactions.to_status');
+            })
+            ->where('workflow_transaction_mapper.workflow_id',$workflow_id)
+            ->where('transactions.from_status','=',$status_id)
+            ->get();
+     
+           if(!$data['body']->isEmpty())
+           {
+                $data['status_code'] = '200';
+                $data['message'] = 'success';
+               
+            }
+            else 
+            {
+                $data['status_code'] =  "204";
+                $data['message'] = "no data available";
+                $data['body'] =(object) array();
+            }
+           
+        return $data;
+    }
+    public function updateCurrentTransaction(Request $request) 
+    {
+ 
+    $condition_check = $this->checkCondition($this->user,$request);
+  
+    if (!empty($condition_check['code']) && $condition_check['code'] == 200) {
+      $transaction_type = Transaction::select('transactions.id','transaction_name','to_status','from_status')
+        ->where(['id'=>$request->transaction_type,'deleted_at'=>NULL])
+        ->first();
+    
+        if(isset($transaction_type->to_status) && !empty($transaction_type->to_status) && isset($request->entity_slug))    
+        {
+          switch ($request->entity_slug) {
+            case 'po':
+              $update_tostatus = PurchaseOrder::where('id',$request->id)->update(['status_id'=>$transaction_type->to_status]);
+              break;
+            case 'eas':
+             $update_tostatus = EAS::where('id',$request->id)->update(['status_id'=>$transaction_type->to_status]);
+              break;
+            }
+        
+            if($update_tostatus) {
+              $data['code']= 200;
+              $data['message']= "Status successfully updated";
+            } else {
+              $data['code']= 204;
+              $data['message']= "Something went wrong while updation data.";
+            }
+        } else {
+            $data['code']= 204;
+            $data['message']= "Transaction Not found.";
+        }
+    } else {
+        $data['code']= 204;
+        $data['message']= $condition_check['message'];
+    }
+    return json_encode($data);  
+   }
+    public function checkCondition($user,$post_data)
+    { 
+      
+     $workflow_transaction_id = $post_data->transaction_type;
+        
+    // if(!empty($post_data->created_by) && !empty($user->id) && $post_data->created_by == $user->id) {
+      
+    //   $data['code']= 204;
+    //   $data['message']= "You are not Authorized to perform this action.";
+    // } else {
+ 
+       if (isset($workflow_transaction_id) && !empty($workflow_transaction_id))  {
+              
+        $condition_checker = WorkFlowTransactionConditionValueMapper::select('workflow_transaction_condition_value_mapper.workflow_id','workflow_transaction_condition_value_mapper.id','workflow_transaction_condition_value_mapper.condition_id','workflow_transaction_condition_value_mapper.transaction_id','workflow_transaction_condition_value_mapper.variable_type','workflow_transaction_condition_value_mapper.value','condition_master.condition_name')
+         ->leftjoin('condition_master','condition_master.id','=','workflow_transaction_condition_value_mapper.condition_id')
+          ->where('workflow_transaction_condition_value_mapper.workflow_id','=',$post_data->workflow_id)
+         ->where('transaction_id','=',$workflow_transaction_id)
+         ->get();
+        // dd($user->can('can_approve'));
+    
+          if (count($condition_checker) > 0) {
+            $checkValue = $this->checkValue($user,$condition_checker);
+              if(!empty($checkValue['message']) && $checkValue['code'] == 200){
+                $data['code']= 200;
+                $data['message']= $checkValue['message'];
+              } else {
+                $data['code']= 204;
+                $data['message']= $checkValue['message'];
+              }
+          } else {
+              $data['code'] = 200;
+              $data['message']= "No Condition Define";
+              }    
+        } else {
+          $data['code'] = 204;
+          $data['message']= "Transaction Id not found.";
+        }
+      // }
+        return $data;
+    }
+    public function checkValue($user,$condition_checker) 
+    {
+    
+    if (count($condition_checker) > 0) {   
+      foreach ($condition_checker as $condition) {
+        switch ($condition->condition_name) {
+          case 'isApproved':
+        
+          if(isset($user) &&  $user->can('can_approve')) {
+            $data['code']= 200;
+            $data['message']= "Successfully Approved";
+          } else {
+            $data['code']= 204;
+            $data['message']= "You are not Authorized to Approved.";
+          }
+          return $data;
+          break;
+          case 'isCheck':
+          $data['code']= 200;
+          $data['message']= "Successfully isCheck";
+          return $data;
+          break;
+          case 'isReject':
+          if(isset($user) &&  $user->can('can_reject')) {
+            $data['code']= 200;
+            $data['message']= "Successfully Reject";
+          } else {
+            $data['code']= 204;
+            $data['message']= "You are not Authorized to Reject.";
+          }
+          return $data;
+          break;
+          case 'isValidate':
+           $data['code']= 200;
+          $data['message']= "Successfully isValidate";
+          return $data;
+          break;
+           case 'Addition':
+           $data['code']= 200;
+            $data['message']= "Successfully Added";
+            return $data;
+          break;
+           case 'Compare':
+          $data['code']= 200;
+            $data['message']= "Successfully Compare";
+            return $data;
+          break;
+        }
+      }  
+    }
+  } 
+}

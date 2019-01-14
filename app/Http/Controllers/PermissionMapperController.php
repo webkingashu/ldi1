@@ -1,0 +1,295 @@
+<?php
+/**
+ * UIDAI
+ *
+ * PHP Version 7.1
+ * 
+ * @category  Vendor
+ * @author  Choice Tech Lab <contact@choicetechlab.com>
+ * @copyright 2017-2018 Choice Tech Lab (https://choicetechlab.com)
+ * @license  https://choicetechlab.com/licenses/ctl-license.php CTL General Public License
+ * @version  1.0.1
+ * @package App\Http\Controllers\PermissionMapperController
+ * @link  https://choicetechlab.com/
+ */
+namespace App\Http\Controllers;
+
+use App\Http\Controllers\Controller;
+use App\Permission;
+use Illuminate\Http\Request;
+use Auth;
+use Redirect;
+use Toast;
+use Illuminate\Support\Facades\Log;
+use App\Exceptions\Handler;
+use App\Role;
+/**
+ * This class provides a all operation to manage the Permissions data.
+ *
+ * The PermissionMapperController is responsible for managing the basic details of permission which require for Roles.
+ * 
+ */
+
+class PermissionMapperController extends Controller
+{
+
+    public $user_id,$user;
+    public function __construct()
+    {
+        //$this->middleware('auth');
+        $this->middleware(function ($request, $next) {
+        $this->user= Auth::user();
+        $this->user_id=Auth::id();
+        return $next($request);
+
+    });
+    }
+   /**
+     * Display a listing of the Vendor,with Vendor Name, Contact Number etc. Also provide actions to edit,delete.
+     *
+     * @return \Illuminate\Http\Response
+
+     * This Function Provide the list of all Vendor Data.
+     *  Pseudo Steps: <br>
+     * 1)Create view to list down the coulmns.<br>
+     * 2) Create Model and add table,list down table coulmns, and use soft delete class<br>
+     * 3) Retreive records in Controller by accessing Model with scope resolution operator.<br>
+     * 4) Store result in variable and pass the variable to view of listing.<br>
+     * 5) Foreach this varaible in listing View to fetch each record from table with actions to be performed.<br>
+     * 
+     * @param mixed[] $request Request structure to get the post data for pagination like limit and offset.
+     * 
+     * @var int $limit Should contain a number for limit of record by default it is 10.
+     * @var int $offset Should contain a number for offset of record by default it is 0.
+     * 
+     * @return json response for Vendor list.
+     
+     */
+    
+    // public function roleEntityMapping($user_id,$entity,$permission) 
+    // {
+
+    //     $user_details = Role::select('roles.name as role','departments.name as department','entity_type.type_name','permissions.name as permissions')
+    //     ->join('users','users.role_id', '=','roles.id')
+    //     ->join('departments','departments.id' ,'=', 'roles.department_id')
+    //     ->join('permission_role','roles.id' ,'=', 'permission_role.role_id')
+    //     ->join('entity_type','entity_type.id' ,'=', 'permission_role.entity_id')
+    //     ->join('permissions','permissions.id' ,'=', 'permission_role.permission_id')
+    //     ->where('users.id', '=',$user_id)
+    //     ->where('entity_type.type_name', '=',$entity)
+    //     ->where('permissions.name', '=',$permission)
+    //     ->where(['roles.deleted_at' => Null, 'departments.deleted_at'=>Null,'entity_type.deleted_at' => Null, 'permissions.deleted_at'=>Null, 'permission_role.deleted_at'=>Null])
+    //     ->first();
+
+    //     if(isset($user_details) && !empty($user_details)) {
+    //        return true;
+    //     } else {
+    //      return false;
+    //     }
+
+    // }
+
+    public function index()
+    {  
+    try {
+            $data = Permission::select('id','name','display_name')
+            ->orderBy('permissions.id','desc')
+            ->where(['deleted_at'=>NULL])
+            ->get();
+       
+            return view('permission.list',compact('data'));
+
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        Toast::error('Something went wrong');
+        return redirect('/permission');
+       }  
+    }
+
+    /**
+     * Show the form for creating a new Vendor.
+     *
+     * @return \Illuminate\Http\Response
+     * Create form to submit record through post 
+     */
+    public function create()
+    {
+    try {
+            return view('permission.add');
+        } catch (\Exception $e) {
+            Log::critical($e->getMessage());
+            app('sentry')->captureException($e);
+            Toast::error('Something went wrong');
+            return redirect('/permission');
+        } 
+    }
+
+    /**
+     * Store a newly created Vendor in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector
+     * This Function Use To Store Vendor Data,with manadatory fields.
+     * Pseudo Steps:<br>
+     * 1) Using validator class fetch inputs from $request and add required fields.<br>
+     * 2) If Validation fails return to the same view if validation is success pass array of requested data to create.<br>
+     * 3) Redirect to listing page with suscces or error message <br>
+     * @param array[] $request request structure to get the post data for storing in to the database
+     * 
+     * @return json result for success Vendor list.
+     * 
+     * @var array[] $result Should contain list of data return by the query. 
+     * @var string $error if any error occur then it will be store in this variable.
+     * @var string $validator is used to make the fields as required and if Validation failed flash message of Error will be diplayed
+     * @var array[] $user_details is used to store list of data which include location id, officetype id, department id of loged in user.
+     * @var array[] $vender_data to fetch data from request
+     * 
+     */
+    public function store(Request $request)
+    {
+        $this->validate($request,[
+        'name' => 'required',
+        'display_name'=>'required'
+        
+        ]);
+    try { 
+         
+            $create_data = Permission::create(['name'=>$request->name,'display_name'=>$request->display_name,'created_by'=>$this->user_id]);
+              
+            if($create_data) {
+                Toast::success('Permission Added Successfully');
+                return Redirect::to('/permission');
+            } else {
+                Toast::errot('Something Went Wrong.');
+                return Redirect::to('/permission');
+            }
+
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        Toast::errot('Something Went Wrong.');
+        return redirect('/permission');
+       } 
+    }
+
+
+     /**
+     * Show the form for editing the specified Vendor.
+     * Pseudo step : 1) Retreive data from table against particular id <br> 
+     * 2) pass this variable to view <br> 
+     * 3) in Value attribute mention the coulmn name to fetch record
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     * @var string $result retrieve data from Model
+     */
+    public function edit($id)
+    {
+    try { 
+            if(isset($id) && !empty($id))  {
+
+                $data = Permission::select('id','name','display_name')->where(['id'=>$id,'deleted_at'=>NULL])->first();
+                $is_update_url = 1;
+                return view('permission.add',compact('data','is_update_url'));
+            } else {
+                Toast::errot('Something Went Wrong.');
+              return Redirect::to('/permission');
+            }
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        Toast::errot('Something Went Wrong.');
+        return redirect('/permission');
+       }  
+    }
+
+   /**
+     * Update the specified Vendor in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+       * This Function Use To Vendor Data,with manadatory fields..
+     * Pseudo Steps:<br>
+     * 1) Using validator class fetch inputs from $request and add required fields.<br>
+     * 2) If Validation fails return to the same view if validation is success pass array of requested data to create.<br>
+     * 3) Redirect to listing page with suscces or error message <br>
+     * @param array[] $request request structure to get the post data for storing in to the database
+     * 
+     * @return json result for success vendor list.
+     * 
+     * @var array[] $result Should contain list of data return by the query. 
+     * @var string $error if any error occur then it will be store in this variable.
+     * @var string $validator is used to make the fields as required and if Validation failed flash message of Error will be diplayed
+     * @var array[] $request to fetch data from request
+     * 
+     */
+    public function update(Request $request, $id)
+    {
+        $this->validate($request,[
+        'name' => 'required',
+        'display_name'=>'required'
+        ]);
+    
+    try {   
+            if(isset($id) && !empty($id)) {
+
+            $update_data = Permission::where('id',$id)->update(['name'=>$request->name,'display_name'=>$request->display_name]);
+
+            if(isset($update_data)) { 
+                    Toast::success('Permission Successfully Updated.');
+                  return Redirect::to('/permission'); 
+
+                } else {
+                     Toast::error('Something went wrong while updating data.');
+                   return Redirect::to('/permission'); 
+                }
+
+           } else {
+            Toast::error('Id not found.');
+            return Redirect::to('/permission');
+           }
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        Toast::error('Something went wrong');
+        return redirect('/permission');
+       }    
+    }
+
+    /**
+     * Remove the specified Vendor from storage.
+     *
+     * @param  int  $id
+     *
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector
+     * @param  int  $id
+     * @var string $id to find record against particular id  
+     * @var string $result to delete record
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {
+    try {    
+           if(isset($id) && !empty($id)) {
+
+            $delete_data = Permission::where('id',$id)->delete();
+                if(isset($delete_data) && !empty($delete_data)) { 
+                    Toast::success('Permission Successfully Deleted.');
+                  return Redirect::to('/permission'); 
+                } else {
+                    Toast::error('Something went wrong while deleteing data.');
+                 return Redirect::to('/permission'); 
+                }
+           } else {
+             Toast::error('Id not found.');
+            return Redirect::to('/permission');
+           }
+        } catch (\Exception $e) {
+        Log::critical($e->getMessage());
+        app('sentry')->captureException($e);
+        Toast::error('Something went wrong');
+        return redirect('/permission');
+       } 
+    }
+}

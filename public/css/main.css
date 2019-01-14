@@ -1,0 +1,144 @@
+.text-center{
+	text-align: center!important;
+}
+#previous_table label.error {
+    font-size: 9px!important;
+}
+.has-error .form-control, .has-error .form-control:focus {
+    /* border-color: #ED5565; */
+    border: 1px solid #e5e6e7!important;
+}
+.div-loader {
+   display: none;
+	   position: absolute;
+    height: 100%;
+    z-index: 99999999999;
+    background: rgba(0, 0, 0, 0.5);
+    left: -220px;
+    right: 0;
+    top: 0;
+    bottom: 0;
+}
+.loader {
+  border: 16px solid #f3f3f3;
+  border-radius: 50%;
+  border-top: 16px solid #1ab394;
+  width: 120px;
+  height: 120px;
+  -webkit-animation: spin 2s linear infinite; /* Safari */
+  animation: spin 2s linear infinite;
+  top: 0;
+	bottom: 0;
+	right: 0;
+	left: 0;
+	margin:auto;
+	position: fixed;
+	z-index: 99999999;
+}
+
+/* Safari */
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0; 
+}
+.date-pos{
+    position: relative;
+
+}
+.date-pos label{
+    position: absolute;
+    top: 33px;
+    left: 0px;
+    height: auto;
+    margin: 0px;
+}
+.form-group  .date{
+    margin-bottom: 18px;
+}
+.metismenu .nav-header .img-circle{
+    width: 50px;
+}
+.input-ht{
+    height: 55px;
+}
+.input-ht label{
+    height: auto;
+    font-size: 12px;
+}
+.search-right .dataTables_filter{
+    float: right;
+}
+.search-right .dataTables_filter input[type='search']{
+    margin-left: 5px;
+}
+.add-btn{
+    width: 30px;
+    font-size: 14px;
+    margin: 0;
+}
+.document-input .input-group label{
+    position: absolute;
+    top: 30px;
+    height: auto;
+    font-size: 12px;
+}
+.document-input .fileinput.input-group{
+    margin-bottom: 19px;
+}
+.document-input .after-add-more-document{
+    width: 100%;
+}
+.justify-content-between{
+    justify-content: space-between;
+}
+.flex-wrap{
+    flex-wrap: wrap;
+}
+.d-flex{
+    display: flex;
+}
+.table > thead > tr > th, .table > tbody > tr > th, .table > tfoot > tr > th, .table > thead > tr > td, .table > tbody > tr > td, .table > tfoot > tr > td{
+    font-size: 14px;
+}
+.error-doc-msg{
+    position: relative;
+}
+.error-doc-msg  .btn-file{
+    position: static !important;
+}
+.error-doc-msg  .btn-file label{
+    position: absolute;
+    top: 60px;
+    left: 0px;
+}
+.w-100{
+    width: 100%;
+}
+
+
+.remove-sm .btn{
+    padding: 3px 12px;
+    margin-top: 33px;
+}
+.add-sm .btn{
+    padding: 3px 12px;
+    margin-top: 33px;
+}
+.mr-3{
+    margin-bottom: 20px !important;
+}
+ .select2-container {
+    z-index: 9999;
+}

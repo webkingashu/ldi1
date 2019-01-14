@@ -1,0 +1,34 @@
+<?php
+
+namespace App;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class PurchaseOrder extends Model
+{
+    use SoftDeletes;
+    /**
+     * The database table used by the model.
+     *
+     * @var string
+     */
+    protected $table = 'purchase_order_masters';
+
+    /**
+    * The database primary key value.
+    *
+    * @var string
+    */
+    protected $primaryKey = 'id';
+
+    /**
+     * Attributes that should be mass-assignable.
+     *
+     * @var array
+     */
+    protected $fillable = ['eas_id','vendor_name', 'vendor_address', 'subject', 'bid_number', 'date_of_bid', 'title_of_bid', 'copy_to','email_users'];
+
+    
+}
+
